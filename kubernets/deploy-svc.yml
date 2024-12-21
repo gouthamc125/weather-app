@@ -24,6 +24,22 @@ spec:
           limits:
             memory: "128Mi"
             cpu: "500m"
+        livenessProbe: 
+          httpGet: 
+            path: /healthz
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 15
+          timeoutSeconds: 2
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 2
+          failureThreshold: 3
             
 ---
 # Weather Application Service
