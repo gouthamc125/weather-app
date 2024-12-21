@@ -5,7 +5,7 @@ kind: Deployment
 metadata:
   name: weatherapp
 spec:
-  replicas: 3
+  replicas: 4
   revisionHistoryLimit: 1
   selector:
     matchLabels:
