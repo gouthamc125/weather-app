@@ -1,0 +1,96 @@
+pipeline {
+    agent any
+    
+    tools {
+        nodejs "nodejs18"
+    }
+    
+    environment {
+        IMAGE_NAME ="gouthamc125/weatherapp"
+    }
+    
+    parameters {
+        string(name: 'IMAGE_TAG', defaultValue: 'latest', description: 'Docker image tag')
+    }
+
+    stages {
+        stage('GitCheckout') {
+            steps {
+                git branch: 'development', changelog: false, poll: false, url: 'https://github.com/gouthamc125/weather-app.git'
+            }
+        }
+        
+        stage('Install Nodejs Dependenccies') {
+            steps {
+                sh "npm install"
+            }
+        }
+        
+        stage('Filesystem Scan') {
+            steps {
+                sh "trivy fs --format table -o trivy_fs.html ."
+            }
+        }
+        
+        stage('Build Image & Tag') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'docker_cred', toolName: 'docker') {
+                        sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
+                    }
+                }
+            }
+        }
+        
+        stage('Scan Image') {
+            steps {
+                sh "trivy image --format table -o trivy_weather_image.html ${IMAGE_NAME}:${IMAGE_TAG}"
+            }
+        }
+        
+        stage('Push to DockerHub') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'docker_cred', toolName: 'docker') {
+                        sh "docker push ${IMAGE_NAME}:${IMAGE_TAG}"
+                    }
+                }
+            }
+        }
+        
+        stage('Update the tag in Kubernetes file') {
+            steps {
+                script {
+                    dir('weather-app') {
+                        // Checkout the development branch with credentials
+                        withCredentials([usernamePassword(credentialsId: 'github_cred', 
+                                                    usernameVariable: 'GIT_USERNAME', 
+                                                    passwordVariable: 'GIT_PASSWORD')]) {
+                        sh """
+                            git config user.name 'jenkins'
+                            git config user.email 'jenkins@example.com'
+
+                            git remote set-url origin https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/gouthamc125/weather-app.git
+                            git fetch origin
+                            git checkout development
+                            git pull origin development --rebase
+                        """
+
+                        // Update the image tag in the deployment manifest
+                        sh """
+                            sed -i 's|image: ${IMAGE_NAME}:.*|image: ${IMAGE_NAME}:${params.IMAGE_TAG}|g' kubernets/deploy-svc.yml
+                        """
+
+                        // Commit and push the changes
+                        sh """
+                            git add kubernets/deploy-svc.yml
+                            git commit -m 'Update image tag to ${params.IMAGE_TAG}' || echo "No changes to commit"
+                            git push origin development
+                        """
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
